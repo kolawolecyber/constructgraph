@@ -5,6 +5,7 @@ export type GraphNodeType =
 
 export interface GraphNode {
   id: string;
+  entityId: string;
   label: string;
   type: GraphNodeType;
   metadata?: {

@@ -6,8 +6,9 @@ export type GraphNodeType =
 
 export interface GraphNode {
   id: string;
+  entityId: string;
   label: string;
-  type: GraphNodeType;
+  type: "task" | "material" | "supplier";
   metadata?: {
     priority?: string;
     category?: string;

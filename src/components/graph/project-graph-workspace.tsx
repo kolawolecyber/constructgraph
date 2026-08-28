@@ -117,5 +117,10 @@ export function ProjectGraphWorkspace({
     );
   }
 
-  return <ProjectGraph graph={graph} />;
+  return (
+  <ProjectGraph
+    projectId={projectId}
+    graph={graph}
+  />
+);
 }

@@ -5,14 +5,15 @@ import type { GraphNodeDetails } from "@/domain/project/types/graph-node";
 export interface ProjectRepository {
   getProjectOverview(projectId: string): Promise<ProjectOverview | null>;
 
-  getTaskImpact(
-    taskId: string,
-    
+   getTaskImpact(
+    projectId: string,
+    taskId: string
   ): Promise<TaskImpact | null>;
   
-  getSupplierImpact(
-  supplierId: string
-): Promise<SupplierImpact | null>;
+   getSupplierImpact(
+    projectId: string,
+    supplierId: string
+  ): Promise<SupplierImpact | null>;
 
 getProjectTasks(
   projectId: string
@@ -27,6 +28,7 @@ getProjectGraph(
 ): Promise<ProjectGraph>;
 
 getGraphNodeDetails(
+   projectId: string,
   nodeId: string
 ): Promise<GraphNodeDetails | null>;
 }

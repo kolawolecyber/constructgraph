@@ -135,45 +135,65 @@ export class CognoDBProjectRepository implements ProjectRepository {
 }
 
 async getGraphNodeDetails(
+  projectId: string,
   nodeId: string
 ): Promise<GraphNodeDetails | null> {
   return withCognoDBSession(async (session) => {
     const result = await session.run(
       `
-      MATCH (node {id: $nodeId})
+      MATCH (project:Project { id: $projectId })
+
+      MATCH path = (project)
+        -[:HAS_PHASE|HAS_TASK|REQUIRES|SUPPLIES|DEPENDS_ON*1..6]-
+        (node { id: $nodeId })
+
+      WITH DISTINCT node
 
       OPTIONAL MATCH (node)-[outgoing]->(outNode)
+
+      WITH node, collect(
+        DISTINCT CASE
+          WHEN outgoing IS NOT NULL THEN {
+            id: elementId(outgoing),
+            label: type(outgoing),
+            direction: 'outgoing',
+            nodeId: outNode.id,
+            nodeLabel: coalesce(
+              outNode.name,
+              outNode.title,
+              outNode.id
+            ),
+            nodeType: toLower(labels(outNode)[0])
+          }
+        END
+      ) AS outgoingRelationships
 
       OPTIONAL MATCH (incomingNode)-[incoming]->(node)
 
       RETURN
         node,
+        outgoingRelationships,
         collect(
-          CASE
-            WHEN outgoing IS NOT NULL THEN {
-              id: elementId(outgoing),
-              label: type(outgoing),
-              direction: 'outgoing',
-              nodeId: outNode.id,
-              nodeLabel: outNode.name,
-              nodeType: labels(outNode)[0]
-            }
-          END
-        ) AS outgoingRelationships,
-        collect(
-          CASE
+          DISTINCT CASE
             WHEN incoming IS NOT NULL THEN {
               id: elementId(incoming),
               label: type(incoming),
               direction: 'incoming',
               nodeId: incomingNode.id,
-              nodeLabel: incomingNode.name,
-              nodeType: labels(incomingNode)[0]
+              nodeLabel: coalesce(
+                incomingNode.name,
+                incomingNode.title,
+                incomingNode.id
+              ),
+              nodeType: toLower(labels(incomingNode)[0])
             }
           END
         ) AS incomingRelationships
       `,
-      { nodeId }
+      {
+        projectId,
+        nodeId,
+      }
     );
 
     if (result.records.length === 0) {
@@ -181,17 +201,14 @@ async getGraphNodeDetails(
     }
 
     const record = result.records[0];
-
     const node = record.get("node");
 
     if (!node) {
       return null;
     }
-const nodeLabels =
-  node.labels ?? [];
 
-    const properties =
-      node.properties ?? {};
+    const properties = node.properties ?? {};
+    const nodeLabels = node.labels ?? [];
 
     const relationships = [
       ...(record.get("outgoingRelationships") ?? []),
@@ -204,40 +221,34 @@ const nodeLabels =
         properties.name ??
         properties.title ??
         properties.id,
-      type: nodeLabels[0] as
-  | "task"
-  | "material"
-  | "supplier",
+      type: nodeLabels[0]?.toLowerCase() as
+        | "task"
+        | "material"
+        | "supplier",
       properties: {
         priority: properties.priority,
         category: properties.category,
         unit: properties.unit,
-        reliabilityScore:
-          properties.reliabilityScore,
+        reliabilityScore: properties.reliabilityScore,
       },
       relationships: relationships.map(
         (relationship: {
           id: string;
           label: string;
-          direction:
-            | "incoming"
-            | "outgoing";
+          direction: "incoming" | "outgoing";
           nodeId: string;
           nodeLabel: string;
           nodeType: string;
         }) => ({
           id: relationship.id,
           label: relationship.label,
-          direction:
-            relationship.direction,
+          direction: relationship.direction,
           nodeId: relationship.nodeId,
-          nodeLabel:
-            relationship.nodeLabel,
-          nodeType:
-            relationship.nodeType as
-              | "task"
-              | "material"
-              | "supplier",
+          nodeLabel: relationship.nodeLabel,
+          nodeType: relationship.nodeType as
+            | "task"
+            | "material"
+            | "supplier",
         })
       ),
     };
@@ -250,7 +261,15 @@ const nodeLabels =
     return withCognoDBSession(async (session) => {
       const supplierResult = await session.run(
         `
-        MATCH (supplier:Supplier {id: $supplierId})
+      MATCH (project:Project {id: $projectId})
+      -[:HAS_PHASE]->
+      (:Phase)
+      -[:HAS_TASK]->
+      (:Task)
+      -[:REQUIRES]->
+      (material:Material)
+      <-[:SUPPLIES]-
+      (supplier:Supplier {id: $supplierId})
 
         RETURN
           supplier.id AS id,
@@ -268,44 +287,58 @@ const nodeLabels =
 
       const materialResult = await session.run(
         `
-        MATCH (supplier:Supplier {id: $supplierId})
-              -[:SUPPLIES]->
-              (material:Material)
+      MATCH (project:Project {id: $projectId})
+      -[:HAS_PHASE]->
+      (:Phase)
+      -[:HAS_TASK]->
+      (:Task)
+      -[:REQUIRES]->
+      (material:Material)
+      <-[:SUPPLIES]-
+      (supplier:Supplier {id: $supplierId})
 
-        RETURN
-          material.id AS id,
-          material.name AS name,
-          material.category AS category,
-          material.unit AS unit
+RETURN DISTINCT
+  material.id AS id,
+  material.name AS name,
+  material.category AS category,
+  material.unit AS unit
 
-        ORDER BY material.name ASC
+ORDER BY material.name ASC
         `,
         { supplierId }
       );
 
       const taskResult = await session.run(
         `
-        MATCH (supplier:Supplier {id: $supplierId})
-              -[:SUPPLIES]->
-              (material:Material)
-              <-[:REQUIRES]-
-              (start:Task)
+      MATCH (project:Project {id: $projectId})
+      -[:HAS_PHASE]->
+      (:Phase)
+      -[:HAS_TASK]->
+      (projectTask:Task)
 
-        OPTIONAL MATCH path =
-          (start)<-[:DEPENDS_ON*0..10]-(affected:Task)
+MATCH (supplier:Supplier {id: $supplierId})
+      -[:SUPPLIES]->
+      (material:Material)
+      <-[:REQUIRES]-
+      (start:Task)
 
-        WITH affected, min(length(path)) AS depth
+WHERE start = projectTask
 
-        WHERE affected IS NOT NULL
+OPTIONAL MATCH path =
+  (start)<-[:DEPENDS_ON*0..10]-(affected:Task)
 
-        RETURN
-          affected.id AS id,
-          affected.name AS name,
-          affected.status AS status,
-          affected.priority AS priority,
-          depth
+WITH affected, min(length(path)) AS depth
 
-        ORDER BY depth ASC, affected.name ASC
+WHERE affected IS NOT NULL
+
+RETURN
+  affected.id AS id,
+  affected.name AS name,
+  affected.status AS status,
+  affected.priority AS priority,
+  depth
+
+ORDER BY depth ASC, affected.name ASC
         `,
         { supplierId }
       );
@@ -384,6 +417,7 @@ async getProjectGraph(
         nodeMap.set(`task:${id}`, {
           id: `task:${id}`,
           label: task.properties.name,
+          entityId: id,
           type: "task",
           metadata: {
             priority: task.properties.priority,
@@ -397,6 +431,7 @@ async getProjectGraph(
         nodeMap.set(`material:${id}`, {
           id: `material:${id}`,
           label: material.properties.name,
+          entityId: id,
           type: "material",
           metadata: {
             category: material.properties.category,
@@ -424,6 +459,7 @@ async getProjectGraph(
 
         nodeMap.set(`supplier:${supplierId}`, {
           id: `supplier:${supplierId}`,
+          entityId: supplierId,
           label: supplier.properties.name,
           type: "supplier",
         });
@@ -448,6 +484,7 @@ async getProjectGraph(
           `task:${dependencyId}`,
           {
             id: `task:${dependencyId}`,
+             entityId: dependencyId,
             label: dependency.properties.name,
             type: "task",
             metadata: {
@@ -513,18 +550,23 @@ async getProjectTasks(
 }
 
   async getTaskImpact(
+     projectId: string,
     taskId: string
   ): Promise<TaskImpact | null> {
     return withCognoDBSession(async (session) => {
       const taskResult = await session.run(
         `
-        MATCH (task:Task {id: $taskId})
+       MATCH (project:Project {id: $projectId})
+      -[:HAS_PHASE]->
+      (:Phase)
+      -[:HAS_TASK]->
+      (task:Task {id: $taskId})
 
-        RETURN
-          task.id AS id,
-          task.name AS name,
-          task.status AS status,
-          task.priority AS priority
+RETURN
+  task.id AS id,
+  task.name AS name,
+  task.status AS status,
+  task.priority AS priority
         `,
         { taskId }
       );

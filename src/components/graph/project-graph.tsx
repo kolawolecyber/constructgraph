@@ -27,6 +27,7 @@ import type {
 } from "@/types/constructgraph";
 
 interface ProjectGraphProps {
+   projectId: string;
   graph: ProjectGraph;
 }
 
@@ -68,6 +69,8 @@ function buildNodes(
       },
       data: {
         label: node.label,
+         entityId: node.entityId,
+  nodeType: node.type,
       },
       type: "default",
       style: {
@@ -92,7 +95,7 @@ function buildEdges(
 }
 
 export function ProjectGraph({
-  graph,
+   projectId, graph,
 }: ProjectGraphProps) {
   const nodes = buildNodes(graph.nodes);
   const edges = buildEdges(graph);
@@ -104,16 +107,27 @@ const [loadingNode, setLoadingNode] =
   useState(false);
 
 const handleNodeClick = useCallback(
-  async (_event: React.MouseEvent, node: Node) => {
+  async (
+    _event: React.MouseEvent,
+    node: Node
+  ) => {
+    const entityId =
+      node.data.entityId;
+
+    if (
+      typeof entityId !== "string" ||
+      entityId.length === 0
+    ) {
+      return;
+    }
+
     try {
       setLoadingNode(true);
 
       const details =
         await getGraphNodeDetails(
-          node.id.replace(
-            /^(task|material|supplier):/,
-            ""
-          )
+          projectId,
+          entityId
         );
 
       setSelectedNode(details);
@@ -123,7 +137,7 @@ const handleNodeClick = useCallback(
       setLoadingNode(false);
     }
   },
-  []
+  [projectId]
 );
 
   return (

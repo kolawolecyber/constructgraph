@@ -23,12 +23,21 @@ export async function getProjectGraph(
 }
 
 export async function getGraphNodeDetails(
+  projectId: string,
   nodeId: string
 ): Promise<GraphNodeDetails> {
   const response = await fetch(
-    `/api/graph/nodes/${encodeURIComponent(
+    `/api/projects/${encodeURIComponent(
+      projectId
+    )}/graph/nodes/${encodeURIComponent(
       nodeId
-    )}`
+    )}`,
+    {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+      },
+    }
   );
 
   if (!response.ok) {

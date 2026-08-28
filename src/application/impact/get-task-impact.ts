@@ -8,9 +8,9 @@ import type {
 export class GetTaskImpact {
   constructor(private readonly repository: ProjectRepository) {}
 
-  async execute(taskId: string): Promise<TaskImpact | null> {
+  async execute(taskId: string, projectId: string,): Promise<TaskImpact | null> {
     return this.repository.getTaskImpact(
-      taskId,
+      taskId, projectId,
       
     );
   }

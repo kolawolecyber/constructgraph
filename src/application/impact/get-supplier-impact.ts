@@ -6,9 +6,9 @@ import type {
 export class GetSupplierImpact {
   constructor(private readonly repository: ProjectRepository) {}
 
-  async execute(
-    supplierId: string
+  async execute( projectId: string,
+    supplierId: string, 
   ): Promise<SupplierImpact | null> {
-    return this.repository.getSupplierImpact(supplierId);
+    return this.repository.getSupplierImpact( projectId,supplierId);
   }
 }
