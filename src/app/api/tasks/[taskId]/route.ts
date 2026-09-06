@@ -11,8 +11,15 @@ const taskIdSchema = z
   .max(100)
   .regex(/^[a-zA-Z0-9_-]+$/);
 
+const projectIdSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(100)
+  .regex(/^[a-zA-Z0-9_-]+$/);
+
 export async function GET(
-  _request: Request,
+  request: Request,
   context: {
     params: Promise<{ taskId: string }>;
   }
@@ -20,13 +27,25 @@ export async function GET(
   try {
     const { taskId } = await context.params;
 
-    const parsed = taskIdSchema.safeParse(taskId);
+    const parsedTaskId = taskIdSchema.safeParse(taskId);
 
-    if (!parsed.success) {
+    if (!parsedTaskId.success) {
       return NextResponse.json(
-        {
-          error: "Invalid task identifier.",
-        },
+        { error: "Invalid task identifier." },
+        { status: 400 }
+      );
+    }
+
+    const projectId = new URL(request.url).searchParams.get(
+      "projectId"
+    );
+
+    const parsedProjectId =
+      projectIdSchema.safeParse(projectId);
+
+    if (!parsedProjectId.success) {
+      return NextResponse.json(
+        { error: "A valid project identifier is required." },
         { status: 400 }
       );
     }
@@ -35,13 +54,14 @@ export async function GET(
       getProjectRepository()
     );
 
-    const result = await useCase.execute(parsed.data);
+    const result = await useCase.execute(
+      parsedProjectId.data,
+      parsedTaskId.data
+    );
 
     if (!result) {
       return NextResponse.json(
-        {
-          error: "Task not found.",
-        },
+        { error: "Task not found in project." },
         { status: 404 }
       );
     }

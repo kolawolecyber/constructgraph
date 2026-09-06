@@ -11,8 +11,15 @@ const supplierIdSchema = z
   .max(100)
   .regex(/^[a-zA-Z0-9_-]+$/);
 
+const projectIdSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(100)
+  .regex(/^[a-zA-Z0-9_-]+$/);
+
 export async function GET(
-  _request: Request,
+  request: Request,
   context: {
     params: Promise<{ supplierId: string }>;
   }
@@ -20,12 +27,29 @@ export async function GET(
   try {
     const { supplierId } = await context.params;
 
-    const parsed = supplierIdSchema.safeParse(supplierId);
+    const parsedSupplierId =
+      supplierIdSchema.safeParse(supplierId);
 
-    if (!parsed.success) {
+    if (!parsedSupplierId.success) {
       return NextResponse.json(
         {
           error: "Invalid supplier identifier.",
+        },
+        { status: 400 }
+      );
+    }
+
+    const projectId = new URL(request.url).searchParams.get(
+      "projectId"
+    );
+
+    const parsedProjectId =
+      projectIdSchema.safeParse(projectId);
+
+    if (!parsedProjectId.success) {
+      return NextResponse.json(
+        {
+          error: "A valid project identifier is required.",
         },
         { status: 400 }
       );
@@ -35,12 +59,15 @@ export async function GET(
       getProjectRepository()
     );
 
-    const result = await useCase.execute(parsed.data);
+    const result = await useCase.execute(
+      parsedProjectId.data,
+      parsedSupplierId.data
+    );
 
     if (!result) {
       return NextResponse.json(
         {
-          error: "Supplier not found.",
+          error: "Supplier not found in project.",
         },
         { status: 404 }
       );

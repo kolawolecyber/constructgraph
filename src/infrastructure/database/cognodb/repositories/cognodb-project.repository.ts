@@ -1,10 +1,13 @@
+
 import "server-only";
 
 import type {
   ProjectOverview,
   ProjectRepository,
   TaskImpact,
-  SupplierImpact,ProjectTask,  ProjectSupplier
+  SupplierImpact,
+  ProjectTask,
+  ProjectSupplier,
 } from "@/domain/project/repositories/project.repository";
 
 import type { GraphNodeDetails } from "@/domain/project/types/graph-node";
@@ -31,7 +34,9 @@ function toNumber(value: unknown): number {
     return (value as { toNumber: () => number }).toNumber();
   }
 
-  return Number(value);
+  const numberValue = Number(value);
+
+  return Number.isFinite(numberValue) ? numberValue : 0;
 }
 
 export class CognoDBProjectRepository implements ProjectRepository {
@@ -97,186 +102,196 @@ export class CognoDBProjectRepository implements ProjectRepository {
     });
   }
 
-
   async getProjectSuppliers(
-  projectId: string
-): Promise<ProjectSupplier[]> {
-  return withCognoDBSession(async (session) => {
-    const result = await session.run(
-      `
-      MATCH (project:Project {id: $projectId})
-            -[:HAS_PHASE]->
-            (:Phase)
-            -[:HAS_TASK]->
-            (:Task)
-            -[:REQUIRES]->
-            (material:Material)
-            <-[:SUPPLIES]-
-            (supplier:Supplier)
+    projectId: string
+  ): Promise<ProjectSupplier[]> {
+    return withCognoDBSession(async (session) => {
+      const result = await session.run(
+        `
+        MATCH (project:Project {id: $projectId})
+              -[:HAS_PHASE]->
+              (:Phase)
+              -[:HAS_TASK]->
+              (:Task)
+              -[:REQUIRES]->
+              (material:Material)
+              <-[:SUPPLIES]-
+              (supplier:Supplier)
 
-      RETURN DISTINCT
-        supplier.id AS id,
-        supplier.name AS name,
-        supplier.reliabilityScore AS reliabilityScore
+        RETURN DISTINCT
+          supplier.id AS id,
+          supplier.name AS name,
+          supplier.reliabilityScore AS reliabilityScore
 
-      ORDER BY supplier.name ASC
-      `,
-      { projectId }
-    );
+        ORDER BY supplier.name ASC
+        `,
+        { projectId }
+      );
 
-   return result.records.map((record) => ({
-  id: record.get("id"),
-  name: record.get("name"),
-  reliabilityScore: toNumber(
-    record.get("reliabilityScore")
-  ),
-}));
-  });
-}
+      return result.records.map((record) => ({
+        id: record.get("id"),
+        name: record.get("name"),
+        reliabilityScore: toNumber(
+          record.get("reliabilityScore")
+        ),
+      }));
+    });
+  }
 
-async getGraphNodeDetails(
-  projectId: string,
-  nodeId: string
-): Promise<GraphNodeDetails | null> {
-  return withCognoDBSession(async (session) => {
-    const result = await session.run(
-      `
-      MATCH (project:Project { id: $projectId })
+  async getGraphNodeDetails(
+    projectId: string,
+    nodeId: string
+  ): Promise<GraphNodeDetails | null> {
+    return withCognoDBSession(async (session) => {
+      const result = await session.run(
+        `
+        MATCH (project:Project {id: $projectId})
 
-      MATCH path = (project)
-        -[:HAS_PHASE|HAS_TASK|REQUIRES|SUPPLIES|DEPENDS_ON*1..6]-
-        (node { id: $nodeId })
+        MATCH path =
+          (project)
+          -[:HAS_PHASE|HAS_TASK|REQUIRES|SUPPLIES|DEPENDS_ON*1..6]-
+          (node {id: $nodeId})
 
-      WITH DISTINCT node
+        WITH DISTINCT node
 
-      OPTIONAL MATCH (node)-[outgoing]->(outNode)
+        OPTIONAL MATCH (node)-[outgoing]->(outNode)
 
-      WITH node, collect(
-        DISTINCT CASE
-          WHEN outgoing IS NOT NULL THEN {
-            id: elementId(outgoing),
-            label: type(outgoing),
-            direction: 'outgoing',
-            nodeId: outNode.id,
-            nodeLabel: coalesce(
-              outNode.name,
-              outNode.title,
-              outNode.id
-            ),
-            nodeType: toLower(labels(outNode)[0])
-          }
-        END
-      ) AS outgoingRelationships
+        WITH
+          node,
+          collect(
+            DISTINCT CASE
+              WHEN outgoing IS NOT NULL THEN {
+                id: elementId(outgoing),
+                label: type(outgoing),
+                direction: 'outgoing',
+                nodeId: outNode.id,
+                nodeLabel: coalesce(
+                  outNode.name,
+                  outNode.title,
+                  outNode.id
+                ),
+                nodeType: toLower(labels(outNode)[0])
+              }
+            END
+          ) AS outgoingRelationships
 
-      OPTIONAL MATCH (incomingNode)-[incoming]->(node)
+        OPTIONAL MATCH (incomingNode)-[incoming]->(node)
 
-      RETURN
-        node,
-        outgoingRelationships,
-        collect(
-          DISTINCT CASE
-            WHEN incoming IS NOT NULL THEN {
-              id: elementId(incoming),
-              label: type(incoming),
-              direction: 'incoming',
-              nodeId: incomingNode.id,
-              nodeLabel: coalesce(
-                incomingNode.name,
-                incomingNode.title,
-                incomingNode.id
-              ),
-              nodeType: toLower(labels(incomingNode)[0])
-            }
-          END
-        ) AS incomingRelationships
-      `,
-      {
-        projectId,
-        nodeId,
+        RETURN
+          node,
+          outgoingRelationships,
+          collect(
+            DISTINCT CASE
+              WHEN incoming IS NOT NULL THEN {
+                id: elementId(incoming),
+                label: type(incoming),
+                direction: 'incoming',
+                nodeId: incomingNode.id,
+                nodeLabel: coalesce(
+                  incomingNode.name,
+                  incomingNode.title,
+                  incomingNode.id
+                ),
+                nodeType: toLower(labels(incomingNode)[0])
+              }
+            END
+          ) AS incomingRelationships
+        `,
+        {
+          projectId,
+          nodeId,
+        }
+      );
+
+      if (result.records.length === 0) {
+        return null;
       }
-    );
 
-    if (result.records.length === 0) {
-      return null;
-    }
+      const record = result.records[0];
+      const node = record.get("node");
 
-    const record = result.records[0];
-    const node = record.get("node");
+      if (!node) {
+        return null;
+      }
 
-    if (!node) {
-      return null;
-    }
+      const properties = node.properties ?? {};
+      const nodeLabels = node.labels ?? [];
 
-    const properties = node.properties ?? {};
-    const nodeLabels = node.labels ?? [];
+      const relationships = [
+        ...(record.get("outgoingRelationships") ?? []),
+        ...(record.get("incomingRelationships") ?? []),
+      ].filter(Boolean);
 
-    const relationships = [
-      ...(record.get("outgoingRelationships") ?? []),
-      ...(record.get("incomingRelationships") ?? []),
-    ].filter(Boolean);
-
-    return {
-      id: properties.id,
-      label:
-        properties.name ??
-        properties.title ??
-        properties.id,
-      type: nodeLabels[0]?.toLowerCase() as
-        | "task"
-        | "material"
-        | "supplier",
-      properties: {
-        priority: properties.priority,
-        category: properties.category,
-        unit: properties.unit,
-        reliabilityScore: properties.reliabilityScore,
-      },
-      relationships: relationships.map(
-        (relationship: {
-          id: string;
-          label: string;
-          direction: "incoming" | "outgoing";
-          nodeId: string;
-          nodeLabel: string;
-          nodeType: string;
-        }) => ({
-          id: relationship.id,
-          label: relationship.label,
-          direction: relationship.direction,
-          nodeId: relationship.nodeId,
-          nodeLabel: relationship.nodeLabel,
-          nodeType: relationship.nodeType as
-            | "task"
-            | "material"
-            | "supplier",
-        })
-      ),
-    };
-  });
-}
+      return {
+        id: properties.id,
+        label:
+          properties.name ??
+          properties.title ??
+          properties.id,
+        type: nodeLabels[0]?.toLowerCase() as
+          | "task"
+          | "material"
+          | "supplier",
+        properties: {
+          priority: properties.priority,
+          category: properties.category,
+          unit: properties.unit,
+          reliabilityScore: properties.reliabilityScore,
+        },
+        relationships: relationships.map(
+          (relationship: {
+            id: string;
+            label: string;
+            direction: "incoming" | "outgoing";
+            nodeId: string;
+            nodeLabel: string;
+            nodeType: string;
+          }) => ({
+            id: relationship.id,
+            label: relationship.label,
+            direction: relationship.direction,
+            nodeId: relationship.nodeId,
+            nodeLabel: relationship.nodeLabel,
+            nodeType: relationship.nodeType as
+              | "task"
+              | "material"
+              | "supplier",
+          })
+        ),
+      };
+    });
+  }
 
   async getSupplierImpact(
+    projectId: string,
     supplierId: string
   ): Promise<SupplierImpact | null> {
     return withCognoDBSession(async (session) => {
+      /*
+       * First establish that the supplier actually supplies
+       * material required by a task belonging to this project.
+       */
       const supplierResult = await session.run(
         `
-      MATCH (project:Project {id: $projectId})
-      -[:HAS_PHASE]->
-      (:Phase)
-      -[:HAS_TASK]->
-      (:Task)
-      -[:REQUIRES]->
-      (material:Material)
-      <-[:SUPPLIES]-
-      (supplier:Supplier {id: $supplierId})
+        MATCH (project:Project {id: $projectId})
+              -[:HAS_PHASE]->
+              (:Phase)
+              -[:HAS_TASK]->
+              (task:Task)
+              -[:REQUIRES]->
+              (material:Material)
+              <-[:SUPPLIES]-
+              (supplier:Supplier {id: $supplierId})
 
-        RETURN
+        RETURN DISTINCT
           supplier.id AS id,
           supplier.name AS name,
           supplier.reliabilityScore AS reliabilityScore
         `,
-        { supplierId }
+        {
+          projectId,
+          supplierId,
+        }
       );
 
       const supplierRecord = supplierResult.records[0];
@@ -285,68 +300,81 @@ async getGraphNodeDetails(
         return null;
       }
 
+      /*
+       * Materials supplied by this supplier that are actually
+       * required by this project.
+       */
       const materialResult = await session.run(
         `
-      MATCH (project:Project {id: $projectId})
-      -[:HAS_PHASE]->
-      (:Phase)
-      -[:HAS_TASK]->
-      (:Task)
-      -[:REQUIRES]->
-      (material:Material)
-      <-[:SUPPLIES]-
-      (supplier:Supplier {id: $supplierId})
+        MATCH (project:Project {id: $projectId})
+              -[:HAS_PHASE]->
+              (:Phase)
+              -[:HAS_TASK]->
+              (:Task)
+              -[:REQUIRES]->
+              (material:Material)
+              <-[:SUPPLIES]-
+              (supplier:Supplier {id: $supplierId})
 
-RETURN DISTINCT
-  material.id AS id,
-  material.name AS name,
-  material.category AS category,
-  material.unit AS unit
+        RETURN DISTINCT
+          material.id AS id,
+          material.name AS name,
+          material.category AS category,
+          material.unit AS unit
 
-ORDER BY material.name ASC
+        ORDER BY material.name ASC
         `,
-        { supplierId }
+        {
+          projectId,
+          supplierId,
+        }
       );
 
+      /*
+       * Find project tasks that directly require material supplied
+       * by this supplier, then find tasks that depend on those
+       * starting tasks.
+       */
       const taskResult = await session.run(
         `
-      MATCH (project:Project {id: $projectId})
-      -[:HAS_PHASE]->
-      (:Phase)
-      -[:HAS_TASK]->
-      (projectTask:Task)
+        MATCH (project:Project {id: $projectId})
+              -[:HAS_PHASE]->
+              (:Phase)
+              -[:HAS_TASK]->
+              (start:Task)
+              -[:REQUIRES]->
+              (material:Material)
+              <-[:SUPPLIES]-
+              (supplier:Supplier {id: $supplierId})
 
-MATCH (supplier:Supplier {id: $supplierId})
-      -[:SUPPLIES]->
-      (material:Material)
-      <-[:REQUIRES]-
-      (start:Task)
+        OPTIONAL MATCH path =
+          (start)<-[:DEPENDS_ON*0..10]-(affected:Task)
 
-WHERE start = projectTask
+        WITH
+          affected,
+          min(length(path)) AS depth
 
-OPTIONAL MATCH path =
-  (start)<-[:DEPENDS_ON*0..10]-(affected:Task)
+        WHERE affected IS NOT NULL
 
-WITH affected, min(length(path)) AS depth
+        RETURN DISTINCT
+          affected.id AS id,
+          affected.name AS name,
+          affected.status AS status,
+          affected.priority AS priority,
+          depth
 
-WHERE affected IS NOT NULL
-
-RETURN
-  affected.id AS id,
-  affected.name AS name,
-  affected.status AS status,
-  affected.priority AS priority,
-  depth
-
-ORDER BY depth ASC, affected.name ASC
+        ORDER BY depth ASC, affected.name ASC
         `,
-        { supplierId }
+        {
+          projectId,
+          supplierId,
+        }
       );
 
       return {
         supplier: {
           id: supplierRecord.get("id"),
-          name: supplierRecord.get("name"),
+          name: supplierRecord.get("name"), projectId,
           reliabilityScore: toNumber(
             supplierRecord.get("reliabilityScore")
           ),
@@ -370,205 +398,199 @@ ORDER BY depth ASC, affected.name ASC
     });
   }
 
+  async getProjectGraph(
+    projectId: string
+  ): Promise<ProjectGraph> {
+    return withCognoDBSession(async (session) => {
+      const result = await session.run(
+        `
+        MATCH (project:Project {id: $projectId})
+              -[:HAS_PHASE]->
+              (:Phase)
+              -[:HAS_TASK]->
+              (task:Task)
 
+        OPTIONAL MATCH (task)-[:REQUIRES]->(material:Material)
 
-async getProjectGraph(
-  projectId: string
-): Promise<ProjectGraph> {
-  return withCognoDBSession(async (session) => {
-    const result = await session.run(
-      `
-      MATCH (project:Project {id: $projectId})
-            -[:HAS_PHASE]->
-            (:Phase)
-            -[:HAS_TASK]->
-            (task:Task)
+        OPTIONAL MATCH (supplier:Supplier)
+              -[:SUPPLIES]->(material)
 
-      OPTIONAL MATCH (task)-[:REQUIRES]->(material:Material)
+        OPTIONAL MATCH (task)-[:DEPENDS_ON]->(dependency:Task)
 
-      OPTIONAL MATCH (supplier:Supplier)
-            -[:SUPPLIES]->(material)
+        RETURN DISTINCT
+          task,
+          material,
+          supplier,
+          dependency
+        `,
+        { projectId }
+      );
 
-      OPTIONAL MATCH (task)-[:DEPENDS_ON]->(
-        dependency:Task
-      )
+      const nodeMap = new Map<string, GraphNode>();
+      const edgeMap = new Map<string, GraphEdge>();
 
-      RETURN DISTINCT
-        task,
-        material,
-        supplier,
-        dependency
-      `,
-      { projectId }
-    );
+      for (const record of result.records) {
+        const task = record.get("task");
+        const material = record.get("material");
+        const supplier = record.get("supplier");
+        const dependency = record.get("dependency");
 
-    const nodeMap = new Map<string, GraphNode>();
-    const edgeMap = new Map<string, GraphEdge>();
+        if (task) {
+          const id = task.properties.id;
 
-    for (const record of result.records) {
-      const task = record.get("task");
-      const material = record.get("material");
-      const supplier = record.get("supplier");
-      const dependency = record.get("dependency");
+          nodeMap.set(`task:${id}`, {
+            id: `task:${id}`,
+            label: task.properties.name,
+            entityId: id,
+            type: "task",
+            metadata: {
+              priority: task.properties.priority,
+            },
+          });
+        }
 
-      if (task) {
-        const id = task.properties.id;
+        if (material && task) {
+          const id = material.properties.id;
 
-        nodeMap.set(`task:${id}`, {
-          id: `task:${id}`,
-          label: task.properties.name,
-          entityId: id,
-          type: "task",
-          metadata: {
-            priority: task.properties.priority,
-          },
-        });
-      }
+          nodeMap.set(`material:${id}`, {
+            id: `material:${id}`,
+            label: material.properties.name,
+            entityId: id,
+            type: "material",
+            metadata: {
+              category: material.properties.category,
+            },
+          });
 
-      if (material) {
-        const id = material.properties.id;
+          const edgeId =
+            `task:${task.properties.id}` +
+            `->material:${id}`;
 
-        nodeMap.set(`material:${id}`, {
-          id: `material:${id}`,
-          label: material.properties.name,
-          entityId: id,
-          type: "material",
-          metadata: {
-            category: material.properties.category,
-          },
-        });
+          edgeMap.set(edgeId, {
+            id: edgeId,
+            source: `task:${task.properties.id}`,
+            target: `material:${id}`,
+            label: "REQUIRES",
+          });
+        }
 
-        const edgeId =
-          `task:${task.properties.id}` +
-          `->material:${id}`;
+        if (supplier && material) {
+          const supplierId = supplier.properties.id;
+          const materialId = material.properties.id;
 
-        edgeMap.set(edgeId, {
-          id: edgeId,
-          source: `task:${task.properties.id}`,
-          target: `material:${id}`,
-          label: "REQUIRES",
-        });
-      }
+          nodeMap.set(`supplier:${supplierId}`, {
+            id: `supplier:${supplierId}`,
+            entityId: supplierId,
+            label: supplier.properties.name,
+            type: "supplier",
+          });
 
-      if (supplier && material) {
-        const supplierId =
-          supplier.properties.id;
+          const edgeId =
+            `supplier:${supplierId}` +
+            `->material:${materialId}`;
 
-        const materialId =
-          material.properties.id;
+          edgeMap.set(edgeId, {
+            id: edgeId,
+            source: `supplier:${supplierId}`,
+            target: `material:${materialId}`,
+            label: "SUPPLIES",
+          });
+        }
 
-        nodeMap.set(`supplier:${supplierId}`, {
-          id: `supplier:${supplierId}`,
-          entityId: supplierId,
-          label: supplier.properties.name,
-          type: "supplier",
-        });
+        if (dependency && task) {
+          const dependencyId = dependency.properties.id;
 
-        const edgeId =
-          `supplier:${supplierId}` +
-          `->material:${materialId}`;
-
-        edgeMap.set(edgeId, {
-          id: edgeId,
-          source: `supplier:${supplierId}`,
-          target: `material:${materialId}`,
-          label: "SUPPLIES",
-        });
-      }
-
-      if (dependency) {
-        const dependencyId =
-          dependency.properties.id;
-
-        nodeMap.set(
-          `task:${dependencyId}`,
-          {
+          nodeMap.set(`task:${dependencyId}`, {
             id: `task:${dependencyId}`,
-             entityId: dependencyId,
+            entityId: dependencyId,
             label: dependency.properties.name,
             type: "task",
             metadata: {
-              priority:
-                dependency.properties.priority,
+              priority: dependency.properties.priority,
             },
-          }
-        );
+          });
 
-        const edgeId =
-          `task:${task.properties.id}` +
-          `->task:${dependencyId}`;
+          const edgeId =
+            `task:${task.properties.id}` +
+            `->task:${dependencyId}`;
 
-        edgeMap.set(edgeId, {
-          id: edgeId,
-          source: `task:${task.properties.id}`,
-          target: `task:${dependencyId}`,
-          label: "DEPENDS_ON",
-        });
+          edgeMap.set(edgeId, {
+            id: edgeId,
+            source: `task:${task.properties.id}`,
+            target: `task:${dependencyId}`,
+            label: "DEPENDS_ON",
+          });
+        }
       }
-    }
 
-    return {
-      nodes: Array.from(nodeMap.values()),
-      edges: Array.from(edgeMap.values()),
-    };
-  });
-}
+      return {
+        nodes: Array.from(nodeMap.values()),
+        edges: Array.from(edgeMap.values()),
+      };
+    });
+  }
 
-async getProjectTasks(
-  projectId: string
-): Promise<ProjectTask[]> {
-  return withCognoDBSession(async (session) => {
-    const result = await session.run(
-      `
-      MATCH (project:Project {id: $projectId})
-            -[:HAS_PHASE]->
-            (phase:Phase)
-            -[:HAS_TASK]->
-            (task:Task)
+  async getProjectTasks(
+    projectId: string
+  ): Promise<ProjectTask[]> {
+    return withCognoDBSession(async (session) => {
+      const result = await session.run(
+        `
+        MATCH (project:Project {id: $projectId})
+              -[:HAS_PHASE]->
+              (phase:Phase)
+              -[:HAS_TASK]->
+              (task:Task)
 
-      RETURN
-        task.id AS id,
-        task.name AS name,
-        task.status AS status,
-        task.priority AS priority,
-        phase.name AS phaseName,
-        phase.sequence AS phaseSequence
+        RETURN
+          task.id AS id,
+          task.name AS name,
+          task.status AS status,
+          task.priority AS priority,
+          phase.name AS phaseName,
+          phase.sequence AS phaseSequence
 
-      ORDER BY phaseSequence ASC, task.name ASC
-      `,
-      { projectId }
-    );
+        ORDER BY phaseSequence ASC, task.name ASC
+        `,
+        { projectId }
+      );
 
-    return result.records.map((record) => ({
-      id: record.get("id"),
-      name: record.get("name"),
-      status: record.get("status"),
-      priority: record.get("priority"),
-      phaseName: record.get("phaseName"),
-    }));
-  });
-}
+      return result.records.map((record) => ({
+        id: record.get("id"),
+        name: record.get("name"),
+        status: record.get("status"),
+        priority: record.get("priority"),
+        phaseName: record.get("phaseName"),
+      }));
+    });
+  }
 
   async getTaskImpact(
-     projectId: string,
+    projectId: string,
     taskId: string
   ): Promise<TaskImpact | null> {
     return withCognoDBSession(async (session) => {
+      /*
+       * First verify that the task belongs to the requested project.
+       */
       const taskResult = await session.run(
         `
-       MATCH (project:Project {id: $projectId})
-      -[:HAS_PHASE]->
-      (:Phase)
-      -[:HAS_TASK]->
-      (task:Task {id: $taskId})
+        MATCH (project:Project {id: $projectId})
+              -[:HAS_PHASE]->
+              (:Phase)
+              -[:HAS_TASK]->
+              (task:Task {id: $taskId})
 
-RETURN
-  task.id AS id,
-  task.name AS name,
-  task.status AS status,
-  task.priority AS priority
+        RETURN
+          task.id AS id,
+          task.name AS name,
+          task.status AS status,
+          task.priority AS priority
         `,
-        { taskId }
+        {
+          projectId,
+          taskId,
+        }
       );
 
       const taskRecord = taskResult.records[0];
@@ -577,16 +599,28 @@ RETURN
         return null;
       }
 
+      /*
+       * Find downstream tasks affected by the selected task.
+       *
+       * The starting task is verified against the project above.
+       * We then return the dependent tasks.
+       */
       const impactResult = await session.run(
         `
-        MATCH (start:Task {id: $taskId})
+        MATCH (project:Project {id: $projectId})
+              -[:HAS_PHASE]->
+              (:Phase)
+              -[:HAS_TASK]->
+              (start:Task {id: $taskId})
 
         MATCH path =
           (start)<-[:DEPENDS_ON*1..10]-(affected:Task)
 
-        WITH affected, min(length(path)) AS depth
+        WITH
+          affected,
+          min(length(path)) AS depth
 
-        RETURN
+        RETURN DISTINCT
           affected.id AS id,
           affected.name AS name,
           affected.status AS status,
@@ -596,6 +630,7 @@ RETURN
         ORDER BY depth ASC, affected.name ASC
         `,
         {
+          projectId,
           taskId,
         }
       );
@@ -605,6 +640,7 @@ RETURN
           id: taskRecord.get("id"),
           name: taskRecord.get("name"),
           status: taskRecord.get("status"),
+          projectId,
           priority: taskRecord.get("priority"),
         },
 
@@ -619,3 +655,4 @@ RETURN
     });
   }
 }
+

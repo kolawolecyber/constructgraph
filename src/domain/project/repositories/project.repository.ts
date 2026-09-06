@@ -66,6 +66,7 @@ export interface TaskImpact {
     id: string;
     name: string;
     status: string;
+     projectId: string,
     priority: string;
   };
   affectedTasks: {
@@ -80,6 +81,7 @@ export interface SupplierImpact {
   supplier: {
     id: string;
     name: string;
+    projectId: string,
     reliabilityScore: number;
   };
   materials: {
