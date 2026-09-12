@@ -347,21 +347,28 @@ export class CognoDBProjectRepository implements ProjectRepository {
               <-[:SUPPLIES]-
               (supplier:Supplier {id: $supplierId})
 
-        OPTIONAL MATCH path =
-          (start)<-[:DEPENDS_ON*0..10]-(affected:Task)
+       OPTIONAL MATCH path =
+  (start)<-[:DEPENDS_ON*0..10]-(affected:Task)
 
-        WITH
-          affected,
-          min(length(path)) AS depth
+WITH
+  project,
+  affected,
+  min(length(path)) AS depth
 
-        WHERE affected IS NOT NULL
+WHERE affected IS NOT NULL
 
-        RETURN DISTINCT
-          affected.id AS id,
-          affected.name AS name,
-          affected.status AS status,
-          affected.priority AS priority,
-          depth
+MATCH (project)
+      -[:HAS_PHASE]->
+      (:Phase)
+      -[:HAS_TASK]->
+      (affected)
+
+RETURN DISTINCT
+  affected.id AS id,
+  affected.name AS name,
+  affected.status AS status,
+  affected.priority AS priority,
+  depth
 
         ORDER BY depth ASC, affected.name ASC
         `,
@@ -613,21 +620,28 @@ export class CognoDBProjectRepository implements ProjectRepository {
               -[:HAS_TASK]->
               (start:Task {id: $taskId})
 
-        MATCH path =
-          (start)<-[:DEPENDS_ON*1..10]-(affected:Task)
+       MATCH path =
+  (start)<-[:DEPENDS_ON*1..10]-(affected:Task)
 
-        WITH
-          affected,
-          min(length(path)) AS depth
+WITH
+  project,
+  affected,
+  min(length(path)) AS depth
 
-        RETURN DISTINCT
-          affected.id AS id,
-          affected.name AS name,
-          affected.status AS status,
-          affected.priority AS priority,
-          depth
+MATCH (project)
+      -[:HAS_PHASE]->
+      (:Phase)
+      -[:HAS_TASK]->
+      (affected)
 
-        ORDER BY depth ASC, affected.name ASC
+RETURN DISTINCT
+  affected.id AS id,
+  affected.name AS name,
+  affected.status AS status,
+  affected.priority AS priority,
+  depth
+
+ORDER BY depth ASC, affected.name ASC
         `,
         {
           projectId,
