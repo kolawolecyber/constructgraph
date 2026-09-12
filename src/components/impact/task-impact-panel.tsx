@@ -82,6 +82,7 @@ export function TaskImpactPanel({
       setImpact(null);
 
       const result = await getTaskImpact(
+         projectId,
         selectedTaskId
       );
 

@@ -94,6 +94,7 @@ export function SupplierImpactPanel({
       setImpact(null);
 
       const result = await getSupplierImpact(
+         projectId,
         selectedSupplierId
       );
 

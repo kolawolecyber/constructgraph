@@ -20,10 +20,13 @@ export async function getProjectSuppliers(
 }
 
 export async function getSupplierImpact(
+  projectId: string,
   supplierId: string
 ): Promise<SupplierImpact> {
   const response = await fetch(
-    `/api/suppliers/${encodeURIComponent(supplierId)}`
+    `/api/projects/${encodeURIComponent(
+      projectId
+    )}/suppliers/${encodeURIComponent(supplierId)}`
   );
 
   if (!response.ok) {
