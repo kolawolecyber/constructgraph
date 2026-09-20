@@ -38,7 +38,7 @@ Supplier
    ▼
 Material
    │
-   │ REQUIRED_FOR
+   │ REQUIRES (from Task)
    ▼
 Task
    │
@@ -77,17 +77,18 @@ The core graph consists of four main node types.
 Nodes
 
 Project
+Phase
 Task
 Material
 Supplier
 
 Relationships
 
-Project  ──HAS_TASK──────> Task
+Project  ──HAS_PHASE─────> Phase ──HAS_TASK──> Task
 
 Supplier ──SUPPLIES──────> Material
 
-Material ──REQUIRED_FOR──> Task
+Task     ──REQUIRES──────> Material
 
 Task     ──DEPENDS_ON────> Task
 
@@ -104,7 +105,7 @@ Graph Overview
                     │  Material   │
                     └──────┬──────┘
                            │
-                      REQUIRED_FOR
+                      REQUIRES (Task → Material)
                            │
                            ▼
                     ┌─────────────┐
@@ -164,7 +165,7 @@ Conceptually:
 
 MATCH (s:Supplier {id: $supplierId})
       -[:SUPPLIES]->(m:Material)
-      -[:REQUIRED_FOR]->(t:Task)
+   <-[:REQUIRES]-(t:Task)
       -[:DEPENDS_ON*0..]->(affected:Task)
 RETURN s, m, t, affected
 
@@ -420,13 +421,13 @@ Returns suppliers associated with a project.
 
 Task Impact
 
-GET /api/tasks/{taskId}
+GET /api/projects/{projectId}/tasks/{taskId}
 
 Returns the downstream impact associated with a task.
 
 Supplier Impact
 
-GET /api/suppliers/{supplierId}
+GET /api/projects/{projectId}/suppliers/{supplierId}
 
 Returns the project impact associated with a supplier.
 
@@ -595,7 +596,7 @@ Construction projects contain relationships that are often more important than t
 For example:
 
 Supplier ──SUPPLIES──────> Material
-Material ──REQUIRED_FOR──> Task
+Task     ──REQUIRES──────> Material
 Task ──DEPENDS_ON───────> Task
 
 A graph allows these connections to be traversed directly.

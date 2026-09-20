@@ -162,25 +162,3 @@ function ErrorState({ message }: { message: string }) {
     </div>
   );
 }
-
-function PlaceholderView({
-  view,
-}: {
-  view: Exclude<View, "overview">;
-}) {
-  return (
-    <div className="flex min-h-72 items-center justify-center rounded-2xl border border-dashed border-border bg-card p-6 text-center">
-      <div>
-        <h2 className="font-semibold">
-          {view === "impact"
-            ? "Task impact analysis"
-            : "Supplier impact analysis"}
-        </h2>
-
-        <p className="mt-2 text-sm text-muted-foreground">
-          This graph analysis workspace is coming next.
-        </p>
-      </div>
-    </div>
-  );
-}

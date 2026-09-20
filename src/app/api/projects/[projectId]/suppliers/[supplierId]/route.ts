@@ -1,15 +1,11 @@
-import { NextResponse } from "next/server";
-import { z } from "zod";
+import { apiError, apiSuccess } from "@/lib/api/api-response";
+import {
+  entityIdSchema,
+  projectIdSchema,
+} from "@/lib/validation/identifiers";
 
 import { getProjectRepository } from "@/application/projects/project-repository";
 import { GetSupplierImpact } from "@/application/impact/get-supplier-impact";
-
-const identifierSchema = z
-  .string()
-  .trim()
-  .min(1)
-  .max(100)
-  .regex(/^[a-zA-Z0-9_-]+$/);
 
 export async function GET(
   _request: Request,
@@ -23,24 +19,16 @@ export async function GET(
   try {
     const { projectId, supplierId } = await context.params;
 
-    const parsedProjectId =
-      identifierSchema.safeParse(projectId);
+    const parsedProjectId = projectIdSchema.safeParse(projectId);
 
-    const parsedSupplierId =
-      identifierSchema.safeParse(supplierId);
+    const parsedSupplierId = entityIdSchema.safeParse(supplierId);
 
     if (!parsedProjectId.success) {
-      return NextResponse.json(
-        { error: "Invalid project identifier." },
-        { status: 400 }
-      );
+      return apiError("Invalid project identifier.", 400);
     }
 
     if (!parsedSupplierId.success) {
-      return NextResponse.json(
-        { error: "Invalid supplier identifier." },
-        { status: 400 }
-      );
+      return apiError("Invalid supplier identifier.", 400);
     }
 
     const useCase = new GetSupplierImpact(
@@ -53,19 +41,11 @@ export async function GET(
     );
 
     if (!result) {
-      return NextResponse.json(
-        { error: "Supplier not found in project." },
-        { status: 404 }
-      );
+      return apiError("Supplier not found in project.", 404);
     }
 
-    return NextResponse.json({
-      data: result,
-    });
+    return apiSuccess(result);
   } catch {
-    return NextResponse.json(
-      { error: "Unable to calculate supplier impact." },
-      { status: 503 }
-    );
+    return apiError("Unable to calculate supplier impact.", 503);
   }
 }

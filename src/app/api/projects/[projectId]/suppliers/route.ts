@@ -1,15 +1,8 @@
-import { NextResponse } from "next/server";
-import { z } from "zod";
+import { apiError, apiSuccess } from "@/lib/api/api-response";
+import { projectIdSchema } from "@/lib/validation/identifiers";
 
 import { getProjectRepository } from "@/application/projects/project-repository";
 import { GetProjectSuppliers } from "@/application/projects/get-project-suppliers";
-
-const projectIdSchema = z
-  .string()
-  .trim()
-  .min(1)
-  .max(100)
-  .regex(/^[a-zA-Z0-9_-]+$/);
 
 export async function GET(
   _request: Request,
@@ -23,12 +16,7 @@ export async function GET(
     const parsed = projectIdSchema.safeParse(projectId);
 
     if (!parsed.success) {
-      return NextResponse.json(
-        {
-          error: "Invalid project identifier.",
-        },
-        { status: 400 }
-      );
+      return apiError("Invalid project identifier.", 400);
     }
 
     const repository = getProjectRepository();
@@ -39,20 +27,13 @@ export async function GET(
       parsed.data
     );
 
-    return NextResponse.json({
-      data: suppliers,
-    });
+    return apiSuccess(suppliers);
   } catch (error) {
   console.error(
     "[GET /api/projects/:projectId/suppliers] Failed:",
     error
   );
 
-  return NextResponse.json(
-    {
-      error: "Unable to load project suppliers.",
-    },
-    { status: 503 }
-  );
+  return apiError("Unable to load project suppliers.", 503);
 }
 }

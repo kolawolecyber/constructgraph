@@ -3,6 +3,7 @@
 import {
   Activity,
   Building2,
+  Network,
   Truck,
 } from "lucide-react";
 
@@ -29,6 +30,11 @@ const navigation = [
     label: "Suppliers",
     icon: Truck,
   },
+  {
+    id: "graph" as const,
+    label: "Graph",
+    icon: Network,
+  },
 ];
 
 export function MobileNav({
@@ -37,7 +43,7 @@ export function MobileNav({
 }: MobileNavProps) {
   return (
     <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-border bg-background/95 px-3 py-2 backdrop-blur md:hidden">
-      <div className="grid grid-cols-3 gap-1">
+      <div className="grid grid-cols-4 gap-1">
         {navigation.map((item) => {
           const Icon = item.icon;
           const isActive = activeView === item.id;

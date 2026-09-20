@@ -520,7 +520,7 @@ async function seed() {
     });
 
     console.log("ConstructGraph seed completed successfully.");
-  } catch (error) {
+  } catch {
     console.error("ConstructGraph seed failed.");
     process.exitCode = 1;
   } finally {

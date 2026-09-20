@@ -48,7 +48,7 @@ async function setupDatabase() {
   }
 }
 
-setupDatabase().catch((error) => {
+setupDatabase().catch(() => {
   console.error("CognoDB schema setup failed.");
   process.exitCode = 1;
 });

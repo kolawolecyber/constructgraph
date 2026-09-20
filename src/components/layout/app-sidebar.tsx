@@ -32,6 +32,11 @@ const navigation = [
     label: "Supply Impact",
     icon: Truck,
   },
+  {
+    id: "graph" as const,
+    label: "Graph Explorer",
+    icon: Network,
+  },
 ];
 
 

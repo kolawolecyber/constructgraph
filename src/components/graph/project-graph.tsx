@@ -9,8 +9,6 @@ import {
   type Node,
 } from "@xyflow/react";
 
-import { GraphNode as CustomGraphNode } from "./graph-node";
-
 import "@xyflow/react/dist/style.css";
 import {
   useCallback,
@@ -34,10 +32,6 @@ interface ProjectGraphProps {
 const NODE_WIDTH = 220;
 const COLUMN_GAP = 120;
 const ROW_GAP = 100;
-
-const nodeTypes = {
-  default: CustomGraphNode,
-};
 
 function buildNodes(
   graphNodes: GraphNodeData[]

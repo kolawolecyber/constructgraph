@@ -145,58 +145,82 @@ export class CognoDBProjectRepository implements ProjectRepository {
     return withCognoDBSession(async (session) => {
       const result = await session.run(
         `
-        MATCH (project:Project {id: $projectId})
+MATCH (project:Project {id: $projectId})
 
-        MATCH path =
-          (project)
+MATCH (project)
+      -[:HAS_PHASE|HAS_TASK|REQUIRES|SUPPLIES|DEPENDS_ON*1..6]-
+      (node {id: $nodeId})
+
+WHERE node:Task
+   OR node:Material
+   OR node:Supplier
+
+WITH DISTINCT project, node
+
+OPTIONAL MATCH (node)-[outgoing]->(outNode)
+
+WHERE
+  outNode IS NULL OR (
+    (outNode:Task OR outNode:Material OR outNode:Supplier)
+    AND EXISTS {
+    MATCH (project)
           -[:HAS_PHASE|HAS_TASK|REQUIRES|SUPPLIES|DEPENDS_ON*1..6]-
-          (node {id: $nodeId})
+          (outNode)
+    }
+  )
 
-        WITH DISTINCT node
+WITH
+  project,
+  node,
+  collect(
+    DISTINCT CASE
+      WHEN outgoing IS NOT NULL AND outNode IS NOT NULL THEN {
+        id: elementId(outgoing),
+        label: type(outgoing),
+        direction: 'outgoing',
+        nodeId: outNode.id,
+        nodeLabel: coalesce(
+          outNode.name,
+          outNode.title,
+          outNode.id
+        ),
+        nodeType: toLower(labels(outNode)[0])
+      }
+    END
+  ) AS outgoingRelationships
 
-        OPTIONAL MATCH (node)-[outgoing]->(outNode)
+OPTIONAL MATCH (incomingNode)-[incoming]->(node)
 
-        WITH
-          node,
-          collect(
-            DISTINCT CASE
-              WHEN outgoing IS NOT NULL THEN {
-                id: elementId(outgoing),
-                label: type(outgoing),
-                direction: 'outgoing',
-                nodeId: outNode.id,
-                nodeLabel: coalesce(
-                  outNode.name,
-                  outNode.title,
-                  outNode.id
-                ),
-                nodeType: toLower(labels(outNode)[0])
-              }
-            END
-          ) AS outgoingRelationships
+WHERE
+  incomingNode IS NULL OR (
+    (incomingNode:Task OR incomingNode:Material OR incomingNode:Supplier)
+    AND EXISTS {
+    MATCH (project)
+          -[:HAS_PHASE|HAS_TASK|REQUIRES|SUPPLIES|DEPENDS_ON*1..6]-
+          (incomingNode)
+    }
+  )
 
-        OPTIONAL MATCH (incomingNode)-[incoming]->(node)
-
-        RETURN
-          node,
-          outgoingRelationships,
-          collect(
-            DISTINCT CASE
-              WHEN incoming IS NOT NULL THEN {
-                id: elementId(incoming),
-                label: type(incoming),
-                direction: 'incoming',
-                nodeId: incomingNode.id,
-                nodeLabel: coalesce(
-                  incomingNode.name,
-                  incomingNode.title,
-                  incomingNode.id
-                ),
-                nodeType: toLower(labels(incomingNode)[0])
-              }
-            END
-          ) AS incomingRelationships
-        `,
+RETURN
+  node,
+  outgoingRelationships,
+  collect(
+    DISTINCT CASE
+      WHEN incoming IS NOT NULL AND incomingNode IS NOT NULL THEN {
+        id: elementId(incoming),
+        label: type(incoming),
+        direction: 'incoming',
+        nodeId: incomingNode.id,
+        nodeLabel: coalesce(
+          incomingNode.name,
+          incomingNode.title,
+          incomingNode.id
+        ),
+        nodeType: toLower(labels(incomingNode)[0])
+      }
+    END
+  ) AS incomingRelationships
+`,
         {
           projectId,
           nodeId,
@@ -220,7 +244,18 @@ export class CognoDBProjectRepository implements ProjectRepository {
       const relationships = [
         ...(record.get("outgoingRelationships") ?? []),
         ...(record.get("incomingRelationships") ?? []),
-      ].filter(Boolean);
+      ].filter(
+        (
+          relationship
+        ): relationship is {
+          id: string;
+          label: string;
+          direction: "incoming" | "outgoing";
+          nodeId: string;
+          nodeLabel: string;
+          nodeType: string;
+        } => Boolean(relationship?.id && relationship?.nodeId)
+      );
 
       return {
         id: properties.id,
@@ -411,24 +446,28 @@ RETURN DISTINCT
     return withCognoDBSession(async (session) => {
       const result = await session.run(
         `
-        MATCH (project:Project {id: $projectId})
-              -[:HAS_PHASE]->
-              (:Phase)
-              -[:HAS_TASK]->
-              (task:Task)
+      MATCH (project:Project {id: $projectId})
+      -[:HAS_PHASE]->
+      (:Phase)
+      -[:HAS_TASK]->
+      (task:Task)
 
-        OPTIONAL MATCH (task)-[:REQUIRES]->(material:Material)
+OPTIONAL MATCH (task)-[:REQUIRES]->(material:Material)
 
-        OPTIONAL MATCH (supplier:Supplier)
-              -[:SUPPLIES]->(material)
+OPTIONAL MATCH (supplier:Supplier)
+      -[:SUPPLIES]->(material)
 
-        OPTIONAL MATCH (task)-[:DEPENDS_ON]->(dependency:Task)
+OPTIONAL MATCH (task)-[:DEPENDS_ON]->(dependency:Task)
 
-        RETURN DISTINCT
-          task,
-          material,
-          supplier,
-          dependency
+WHERE dependency IS NULL OR EXISTS {
+  MATCH (project)-[:HAS_PHASE]->(:Phase)-[:HAS_TASK]->(dependency)
+}
+
+RETURN DISTINCT
+  task,
+  material,
+  supplier,
+  dependency
         `,
         { projectId }
       );
