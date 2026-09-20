@@ -24,6 +24,8 @@ import type {
   ProjectGraph, GraphNodeDetails,
 } from "@/types/constructgraph";
 
+import { GraphNode as CustomGraphNode } from "./graph-node";
+
 interface ProjectGraphProps {
    projectId: string;
   graph: ProjectGraph;
@@ -32,6 +34,10 @@ interface ProjectGraphProps {
 const NODE_WIDTH = 220;
 const COLUMN_GAP = 120;
 const ROW_GAP = 100;
+
+const nodeTypes = {
+  custom: CustomGraphNode,
+};
 
 function buildNodes(
   graphNodes: GraphNodeData[]
@@ -66,7 +72,7 @@ function buildNodes(
          entityId: node.entityId,
   nodeType: node.type,
       },
-      type: "default",
+      type: "custom",
       style: {
         width: NODE_WIDTH,
         borderRadius: 14,
@@ -85,6 +91,15 @@ function buildEdges(
     target: edge.target,
     label: edge.label,
     animated: false,
+    labelStyle: {
+      fill: "#111827",
+      fontSize: 12,
+      fontWeight: 600,
+    },
+    labelBgStyle: {
+      fill: "#ffffff",
+      fillOpacity: 0.95,
+    },
   }));
 }
 
@@ -139,6 +154,7 @@ const handleNodeClick = useCallback(
       <ReactFlow
         nodes={nodes}
         edges={edges}
+        nodeTypes={nodeTypes}
         fitView
         minZoom={0.25}
         maxZoom={1.8}
